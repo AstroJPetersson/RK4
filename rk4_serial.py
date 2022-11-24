@@ -9,6 +9,7 @@ from astropy import units as u
 from astropy.time import Time
 from astropy.coordinates import get_body_barycentric_posvel
 
+import time
 #--------------------------------------------
 G = 4*np.pi**2  # AU^3 yr^-2 Msol
 
@@ -55,6 +56,7 @@ def RungeKutta4th(Wn, mj, t0, tn, h):
     
     return t, W_array
 
+
 #--------------------------------------------
 # Time at which positions and velocities of the planets in the Solar system will be obtained from:
 T = Time("2022-11-18 00:00")
@@ -72,13 +74,14 @@ for n in range(len(bodies)):
     vector6N_solarsystem[n] = w
 
 # N-body integration:
+start = time.time()
 time_solarsystem, phase_solarsystem = RungeKutta4th(vector6N_solarsystem, mj_solarsystem, 0, 100, 1/(365.25))
+print('Integration time: %s s' % (time.time() - start))
 
-print(phase_solarsystem)
 
 #--------------------------------------------
 # Animation:
-movie = False
+movie = True
 
 if movie == True:
     plt.style.use('dark_background')
@@ -136,10 +139,11 @@ if movie == True:
         return line, txt
 
     # Make and save animation:
-    which_frames = np.arange(0, 1+len(time_solarsystem), 5)
+    which_frames = np.arange(0, 1+len(time_solarsystem), 10)
     fps = 30
     ani = animation.FuncAnimation(fig, animate, frames=which_frames, interval=fps, blit=True)
-    ani.save("solarsystem.mp4")
+    ani.save("solarsystem.gif")
+
 
 #--------------------------------------------
 
