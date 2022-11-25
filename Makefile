@@ -9,6 +9,6 @@ profile:
 	$(PY) -m gprof2dot -f pstats o.profile | dot -Tpng -o profile.png
 
 mpi:
-	$(MPI) -n 4 $(PY) rk4_mpi.py
+	$(MPI) -n 2 $(PY) rk4_mpi.py
 
 

@@ -1,5 +1,6 @@
 #!/Users/jonathanpetersson/opt/anaconda3/bin/python
 
+
 #--------------------------------------------
 import numpy as np
 import matplotlib.pyplot as plt 
@@ -12,56 +13,54 @@ from astropy.coordinates import get_body_barycentric_posvel
 import time
 from mpi4py import MPI
 
+
 #--------------------------------------------
 G = 4*np.pi**2  # AU^3 yr^-2 Msol
-
-#--------------------------------------------
-# bodies to include in the N-body integration:
-bodies_solarsystem = ['Sun', 'Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune']
-mj_solarsystem = np.array([1.989e30, 3.30e23, 4.87e24, 5.97e24, 6.42e23, 1.90e27, 5.69e26, 8.66e25, 1.03e26])/(1.989e30)
-N_ast = 100
-
-# position and velocity for each body at a given time T:
-T = Time("2022-12-02 00:00")
-vector6N_solarsystem = np.zeros(shape=(len(bodies_solarsystem)+N_ast, 2, 3))
-for n in range(len(bodies_solarsystem)):
-    p, v = get_body_barycentric_posvel(bodies_solarsystem[n], T)
-    p, v = p.get_xyz().value, v.get_xyz().to(u.AU/u.yr).value
-    w = np.array([p, v])
-    vector6N_solarsystem[n] = w
-
-# asteroids:
-for i in range(len(bodies_solarsystem), len(bodies_solarsystem)+N_ast):
-    #r = 40*np.random.rand()
-    #phi = 2*np.pi*np.random.rand()
-    #p = np.array([r*np.cos(phi), r*np.sin(phi), 0])
-    x, y = 80 * np.random.rand(2) - 40
-    p = np.array([x, y, 0])
-    vv = np.cross(np.array([0, 0, 1]), p)
-    vc = np.sqrt(G*np.sum(mj_solarsystem)/np.linalg.norm(p))
-    v = vc * vv / np.linalg.norm(vv)
-    w = np.array([p, v])
-    vector6N_solarsystem[i] = w
-
-mj_ast = np.zeros(N_ast)
-mj_solarsystem = np.append(mj_solarsystem, mj_ast)
-
-
-#--------------------------------------------
-#MPI.Init()
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-N = len(vector6N_solarsystem)
-start = rank * (N // size)
+
+#--------------------------------------------
+# bodies to include in the N-body integration:
+planets = ['Sun', 'Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune']
+m_planets = np.array([1.989e30, 3.30e23, 4.87e24, 5.97e24, 6.42e23, 1.90e27, 5.69e26, 8.66e25, 1.03e26])/(1.989e30)
+N_asteroids = 100
+
+vector6N_solarsystem = np.zeros(shape=(len(planets)+N_asteroids, 2, 3))
+m_solarsystem = np.append(m_planets, np.zeros(N_asteroids))
+
+if rank == 0:
+    # positions and velocities for the Solar system at a given time T:
+    Time = Time("2022-12-02 00:00")
+    for n in range(len(planets)):
+        p, v = get_body_barycentric_posvel(planets[n], Time)
+        p, v = p.get_xyz().value, v.get_xyz().to(u.AU/u.yr).value
+        w = np.array([p, v])
+        vector6N_solarsystem[n] = w
+
+    # generate some asteroids in the Solar system:
+    for i in range(len(planets), len(planets)+N_asteroids):
+        x, y = 100 * np.random.rand(2) - 50
+        p = np.array([x, y, 0])
+        vv = np.cross(np.array([0, 0, 1]), p)
+        vc = np.sqrt(G*np.sum(m_planets)/np.linalg.norm(p))
+        v = vc * vv / np.linalg.norm(vv)
+        w = np.array([p, v]) + vector6N_solarsystem[0]
+        vector6N_solarsystem[i] = w
+
+comm.Bcast(vector6N_solarsystem, root=0)
+
+#--------------------------------------------
+N = len(vector6N_solarsystem)  # total number of bodies
+start = rank * (N // size)     
 end = start + (N // size)
 if (N % size) != 0 and (rank == (size-1)):
     end += 1
 
-
 print(f'Process {rank+1} out of {size} takes care of bodies {start} - {end}')
+
 
 #--------------------------------------------
 def g(W, m):
@@ -72,9 +71,9 @@ def g(W, m):
     dwdt[:,0] = W[:,1]
 
     # calculate dv/dt:
-    xi = W[start:end,0,np.newaxis]  # select bodies between [bi_start, bi_end)
-    xj = W[:,0]                           # all bodies
-    deltax = xi - xj                      # distances between bodies in xi and all bodies in xj
+    xi = W[start:end,0,np.newaxis]  # select bodies between [start, end)
+    xj = W[:,0]                     # all bodies
+    deltax = xi - xj                # distances between bodies in xi and all bodies in xj
     deltax_norm = np.linalg.norm(deltax, axis=2, keepdims=True)
 
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -82,6 +81,7 @@ def g(W, m):
         before_sum = np.where(np.isfinite(before_sum), before_sum, 0)
         dvidt = -np.sum(before_sum, axis=1)
 
+    # MPI Allgatherv():
     sendbuf = dvidt.flatten()
     recvbuf = np.empty(N*3)
     recvcounts = np.array(comm.allgather(len(sendbuf)))
@@ -114,24 +114,26 @@ def RungeKutta4th(W, m, t0, tf, h):
 
     return t, W_save
 
+
 #--------------------------------------------
 # N-body integration:
 start_time = time.time()
-time_solarsystem, phase_solarsystem = RungeKutta4th(vector6N_solarsystem, mj_solarsystem, 0, 100, 1/(365.25))
+time_solarsystem, phase_solarsystem = RungeKutta4th(vector6N_solarsystem, m_solarsystem, 0, 100, 1/(365.25))
 print('Integration time: %s s' % (time.time() - start_time))
+
 
 #--------------------------------------------
 # Animation:
-movie = True
+make_animation = True
 
-if movie == True and rank == 0:
+if make_animation == True and rank == 0:
     plt.style.use('dark_background')
 
     fig, ax = plt.subplots(1, figsize=(9, 9))
     l, b, h, w = .75, .75, .2, .2
     ax_zoom = fig.add_axes([l, b, w, h])
 
-    label  = ['The Sun'] + bodies_solarsystem[1:]
+    label  = ['The Sun'] + planets[1:]
     marker = ['*', 'o', 'o', 'o', 'o', 'o', 'o', 'o', 'o']
     markersize = [10, 5, 5, 5, 5, 10, 10, 10, 10]
     markersize_zoom = [20, 10, 10, 10, 10] + markersize[5:]
@@ -140,7 +142,7 @@ if movie == True and rank == 0:
     traj_list = []
     traj_zoom_list = []
     zoom_list = []
-    for i in range(0, len(bodies_solarsystem)):
+    for i in range(0, len(planets)):
         line, = ax.plot([], [], marker=marker[i], markersize=markersize[i], color=color[i], ls='none', label=label[i])
         line_list.append(line)
         zoom, = ax_zoom.plot([], [], marker=marker[i], markersize=markersize[i], color=color[i], ls='none', label=label[i])
@@ -180,18 +182,19 @@ if movie == True and rank == 0:
         line_ast.set_data(phase_solarsystem[:,len(line_list):,0,0][frame], phase_solarsystem[:,len(line_list):,0,1][frame])
         
         txt.set_text('{:0.2f} yr'.format(time_solarsystem[frame]))
-        if frame%1000 == 0:
-            print(f'Frame: {frame}')
+        
         return line, txt
 
     # Make and save animation:
-    which_frames = np.arange(0, 1+len(time_solarsystem), 100)
+    which_frames = np.arange(0, len(time_solarsystem)+1, 100)
     fps = 30
     ani = animation.FuncAnimation(fig, animate, frames=which_frames, interval=fps, blit=True)
-    ani.save("solarsystem.mp4")
+    ani.save("solarsystem.gif")
+
 
 #--------------------------------------------
 MPI.Finalize()
+
 
 #--------------------------------------------
 
