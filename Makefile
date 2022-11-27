@@ -12,4 +12,3 @@ mpi:
 	$(MPI) -n 2 $(PY) rk4_mpi.py
 
 
-
