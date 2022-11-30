@@ -10,87 +10,103 @@ from astropy.time import Time
 from astropy.coordinates import get_body_barycentric_posvel
 
 import time
+
+
 #--------------------------------------------
 G = 4*np.pi**2  # AU^3 yr^-2 Msol
 
 
 #--------------------------------------------
-def g(W, mj):
-    # Caclculate dv/dt:
-    xi = W[:,0,np.newaxis]
-    xj = W[:,0]
-    deltax = xi-xj
-    deno = np.linalg.norm(deltax, axis=2)**3
-    deno = deno[:,:,np.newaxis]
-    with np.errstate(divide='ignore', invalid='ignore'):
-        bsum = G*mj[:,np.newaxis]*deltax/deno
-        bsum = np.where(np.isfinite(bsum), bsum, 0)
-        dvdt = -np.sum(bsum, axis=1)
-    # Calculate dx/dt:
-    dxdt = W[:,1]
-    # Create dw/dt:
-    dwdt = np.zeros(shape=(len(W), 2, 3))
-    dwdt[:,0] = dxdt
-    dwdt[:,1] = dvdt
-    
-    return dwdt
+# bodies to include in the N-body integration:
+planets = ['Sun', 'Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune']
+m_planets = np.array([1.989e30, 3.30e23, 4.87e24, 5.97e24, 6.42e23, 1.90e27, 5.69e26, 8.66e25, 1.03e26])/(1.989e30)
+N_asteroids = 100
 
-def RungeKutta4th(Wn, mj, t0, tn, h):
-    # Time:
-    t = np.arange(t0, tn+h, h)
-    # Create W_array for position and velocity:
-    W_array = np.zeros(shape=(len(t), len(Wn), 2, 3))
-    W_array[0] = Wn
-    # Runge-Kutta:
-    for i in range(1, len(t)):
-        fa = g(Wn, mj)
-        Wb = Wn + h/2*fa
-        fb = g(Wb, mj)
-        Wc = Wn + h/2*fb
-        fc = g(Wc, mj)
-        Wd = Wn + h*fc
-        fd = g(Wd, mj)
-        Wn1 = Wn + 1/6*h*fa + 1/3*h*fb + 1/3*h*fc + 1/6*h*fd
-        W_array[i] = Wn1 - Wn1[0]
-        Wn = Wn1
-    
-    return t, W_array
+vector6N_solarsystem = np.zeros(shape=(len(planets)+N_asteroids, 2, 3))
+m_solarsystem = np.append(m_planets, np.zeros(N_asteroids))
 
-
-#--------------------------------------------
-# Time at which positions and velocities of the planets in the Solar system will be obtained from:
-T = Time("2022-11-18 00:00")
-
-# What bodies to include in the solar system:
-bodies = ['Sun', 'Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune']
-mj_solarsystem = np.array([1.989e30, 3.30e23, 4.87e24, 5.97e24, 6.42e23, 1.90e27, 5.69e26, 8.66e25, 1.03e26])/(1.989e30)
-
-# Find position and velocity for each body:
-vector6N_solarsystem = np.zeros(shape=(len(bodies), 2, 3))
-for n in range(len(bodies)):
-    p, v = get_body_barycentric_posvel(bodies[n], T)
+# positions and velocities for the Solar system at a given time T:
+Time = Time("2022-12-02 00:00")
+for n in range(len(planets)):
+    p, v = get_body_barycentric_posvel(planets[n], Time)
     p, v = p.get_xyz().value, v.get_xyz().to(u.AU/u.yr).value
     w = np.array([p, v])
     vector6N_solarsystem[n] = w
 
+# generate some asteroids in the Solar system:
+for i in range(len(planets), len(planets)+N_asteroids):
+    x, y = 100 * np.random.rand(2) - 50
+    p = np.array([x, y, 0])
+    vv = np.cross(np.array([0, 0, 1]), p)
+    vc = np.sqrt(G*np.sum(m_planets)/np.linalg.norm(p))
+    v = vc * vv / np.linalg.norm(vv)
+    w = np.array([p, v]) + vector6N_solarsystem[0]
+    vector6N_solarsystem[i] = w
+
+
+#--------------------------------------------
+def g(W, m):
+    # create dw/dt:
+    dwdt = np.zeros(shape=(len(W), 2, 3))
+    
+    # calculate dx/dt:
+    dwdt[:,0] = W[:,1]
+    
+    # caclculate dv/dt:
+    xi = W[:,0,np.newaxis]
+    xj = W[:,0]
+    deltax = xi-xj
+    deltax_norm = np.linalg.norm(deltax, axis=2, keepdims=True)
+    
+    with np.errstate(divide='ignore', invalid='ignore'):
+        before_sum = G * m[:,np.newaxis] * deltax / deltax_norm**3
+        before_sum = np.where(np.isfinite(before_sum), before_sum, 0)
+        dwdt[:,1] = -np.sum(before_sum, axis=1)
+    
+    return dwdt
+
+def RungeKutta4th(W, m, t0, tf, h):
+    # time:
+    t = np.arange(t0, tf+h, h)
+    
+    # create W_save:
+    W_save = np.zeros(shape=(len(t), len(W), 2, 3))
+    W_save[0] = W
+    
+    # Runge-Kutta:
+    for i in range(1, len(t)):
+        fa = g(W, m)
+        Wb = W + h/2*fa
+        fb = g(Wb, m)
+        Wc = W + h/2*fb
+        fc = g(Wc, m)
+        Wd = W + h*fc
+        fd = g(Wd, m)
+        W = W + 1/6*h*fa + 1/3*h*fb + 1/3*h*fc + 1/6*h*fd
+        W_save[i] = W - W[0]
+    
+    return t, W_save
+
+
+#--------------------------------------------
 # N-body integration:
-start = time.time()
-time_solarsystem, phase_solarsystem = RungeKutta4th(vector6N_solarsystem, mj_solarsystem, 0, 100, 1/(365.25))
-print('Integration time: %s s' % (time.time() - start))
+time0 = time.time()
+time_solarsystem, phase_solarsystem = RungeKutta4th(vector6N_solarsystem, m_solarsystem, 0, 10, 1/(365.25))
+print('Integration time: %s s' % (time.time() - time0))
 
 
 #--------------------------------------------
 # Animation:
-movie = True
+make_animation = False
 
-if movie == True:
+if make_animation == True:
     plt.style.use('dark_background')
 
     fig, ax = plt.subplots(1, figsize=(9, 9))
     l, b, h, w = .75, .75, .2, .2
     ax_zoom = fig.add_axes([l, b, w, h])
 
-    label  = ['The Sun'] + bodies[1:]
+    label  = ['The Sun'] + planets[1:]
     marker = ['*', 'o', 'o', 'o', 'o', 'o', 'o', 'o', 'o']
     markersize = [10, 5, 5, 5, 5, 10, 10, 10, 10]
     markersize_zoom = [20, 10, 10, 10, 10] + markersize[5:]
@@ -99,7 +115,7 @@ if movie == True:
     traj_list = []
     traj_zoom_list = []
     zoom_list = []
-    for i in range(0, len(bodies)):
+    for i in range(0, len(planets)):
         line, = ax.plot([], [], marker=marker[i], markersize=markersize[i], color=color[i], ls='none', label=label[i])
         line_list.append(line)
         zoom, = ax_zoom.plot([], [], marker=marker[i], markersize=markersize[i], color=color[i], ls='none', label=label[i])
@@ -110,7 +126,9 @@ if movie == True:
         traj_zoom_list.append(traj_zoom)
     txt = ax.text(0.05, 0.95, '', fontsize=14, ha='left', va='top', transform=ax.transAxes)
 
-    # Make the plot look nice:
+    line_ast, = ax.plot([], [], marker='.', markersize=5, color='grey', ls='none', label='Asteroids')
+
+    # make the plot look nice:
     ax.set_xlim(-32, 32)
     ax.set_ylim(-32, 32)
     ax_zoom.set_xlim(-2, 2)
@@ -133,16 +151,18 @@ if movie == True:
             zoom_list[i].set_data(phase_solarsystem[:,i,0,0][frame], phase_solarsystem[:,i,0,1][frame])
             traj_list[i].set_data(phase_solarsystem[:,i,0,0][:frame], phase_solarsystem[:,i,0,1][:frame])
             traj_zoom_list[i].set_data(phase_solarsystem[:,i,0,0][:frame], phase_solarsystem[:,i,0,1][:frame])
+        
+        line_ast.set_data(phase_solarsystem[:,len(line_list):,0,0][frame], phase_solarsystem[:,len(line_list):,0,1][frame])
+
         txt.set_text('{:0.2f} yr'.format(time_solarsystem[frame]))
-        if frame%100 == 0:
-            print(f'Frame: {frame}')
+        
         return line, txt
 
     # Make and save animation:
-    which_frames = np.arange(0, 1+len(time_solarsystem), 10)
+    which_frames = np.arange(0, len(time_solarsystem), 10)
     fps = 30
     ani = animation.FuncAnimation(fig, animate, frames=which_frames, interval=fps, blit=True)
-    ani.save("solarsystem.gif")
+    ani.save("solarsystem.mp4")
 
 
 #--------------------------------------------

@@ -57,7 +57,7 @@ N = len(vector6N_solarsystem)  # total number of bodies
 start = rank * (N // size)     
 end = start + (N // size)
 if (N % size) != 0 and (rank == (size-1)):
-    end += 1
+    end += (N % size)
 
 print(f'Process {rank+1} out of {size} takes care of bodies {start} - {end}')
 
@@ -117,14 +117,14 @@ def RungeKutta4th(W, m, t0, tf, h):
 
 #--------------------------------------------
 # N-body integration:
-start_time = time.time()
+Wtime0 = MPI.Wtime()
 time_solarsystem, phase_solarsystem = RungeKutta4th(vector6N_solarsystem, m_solarsystem, 0, 100, 1/(365.25))
-print('Integration time: %s s' % (time.time() - start_time))
+print('Integration time: %s s' % (MPI.Wtime() - Wtime0))
 
 
 #--------------------------------------------
 # Animation:
-make_animation = True
+make_animation = False
 
 if make_animation == True and rank == 0:
     plt.style.use('dark_background')
@@ -155,7 +155,7 @@ if make_animation == True and rank == 0:
 
     line_ast, = ax.plot([], [], marker='.', markersize=5, color='grey', ls='none', label='Asteroids')
 
-    # Make the plot look nice:
+    # make the plot look nice:
     ax.set_xlim(-32, 32)
     ax.set_ylim(-32, 32)
     ax_zoom.set_xlim(-2, 2)
@@ -171,7 +171,7 @@ if make_animation == True and rank == 0:
     ax.text(-25, -29, '10 AU', fontsize=14, ha='center', va='bottom')
     fig.tight_layout()
 
-    # Function for animation:
+    # function for animation:
     def animate(frame):
         for i in range(0, len(line_list)):
             line_list[i].set_data(phase_solarsystem[:,i,0,0][frame], phase_solarsystem[:,i,0,1][frame])
@@ -185,11 +185,11 @@ if make_animation == True and rank == 0:
         
         return line, txt
 
-    # Make and save animation:
-    which_frames = np.arange(0, len(time_solarsystem)+1, 100)
+    # make and save animation:
+    which_frames = np.arange(0, len(time_solarsystem), 100)
     fps = 30
     ani = animation.FuncAnimation(fig, animate, frames=which_frames, interval=fps, blit=True)
-    ani.save("solarsystem.gif")
+    ani.save("solarsystem.mp4")
 
 
 #--------------------------------------------

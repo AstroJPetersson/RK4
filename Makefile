@@ -5,10 +5,10 @@ serial:
 	$(PY) rk4_serial.py
 
 profile:
-	$(PY) -m cProfile -o o.profile rk4_serial.py
-	$(PY) -m gprof2dot -f pstats o.profile | dot -Tpng -o profile.png
+	$(PY) -m cProfile -o profile.out rk4_serial.py
+	$(PY) -m gprof2dot -f pstats profile.out | dot -Tpng -o profile.png
 
 mpi:
-	$(MPI) -n 2 $(PY) rk4_mpi.py
+	$(MPI) -n 1 $(PY) rk4_mpi.py
 
 
