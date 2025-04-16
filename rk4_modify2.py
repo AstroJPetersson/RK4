@@ -40,6 +40,7 @@ for i in range(len(planets), len(planets)+N_asteroids):
     vv = np.cross(np.array([0, 0, 1]), p)
     vc = np.sqrt(G*np.sum(m_planets)/np.linalg.norm(p))
     v = vc * vv / np.linalg.norm(vv)
+    p[2] = 10 * np.random.rand() - 5
     w = np.array([p, v]) + vector6N_solarsystem[0]
     vector6N_solarsystem[i] = w
 
@@ -91,7 +92,7 @@ def RungeKutta4th(W, m, t0, tf, h):
 #--------------------------------------------
 # N-body integration:
 time0 = time.time()
-time_solarsystem, phase_solarsystem = RungeKutta4th(vector6N_solarsystem, m_solarsystem, 0, 10, 1/(365.25))
+time_solarsystem, phase_solarsystem = RungeKutta4th(vector6N_solarsystem, m_solarsystem, 0, 100, 1/(365.25))
 print('Integration time: %s s' % (time.time() - time0))
 
 
@@ -102,9 +103,7 @@ make_animation = True
 if make_animation == True:
     plt.style.use('dark_background')
 
-    fig, ax = plt.subplots(1, figsize=(9, 9))
-    l, b, h, w = .75, .75, .2, .2
-    ax_zoom = fig.add_axes([l, b, w, h])
+    fig, ax = plt.subplots(1, figsize=(9, 9), layout='tight')
 
     label  = ['The Sun'] + planets[1:]
     marker = ['*', 'o', 'o', 'o', 'o', 'o', 'o', 'o', 'o']
@@ -113,17 +112,11 @@ if make_animation == True:
     color  = ['yellow', 'darkgrey', 'wheat', 'deepskyblue', 'red', 'orange', 'sienna', 'cyan', 'mediumslateblue']
     line_list = []
     traj_list = []
-    traj_zoom_list = []
-    zoom_list = []
     for i in range(0, len(planets)):
         line, = ax.plot([], [], marker=marker[i], markersize=markersize[i], color=color[i], ls='none', label=label[i])
         line_list.append(line)
-        zoom, = ax_zoom.plot([], [], marker=marker[i], markersize=markersize[i], color=color[i], ls='none', label=label[i])
-        zoom_list.append(zoom)
         traj, = ax.plot([], [], color=color[i], ls='-', lw=2, alpha=0.4)
         traj_list.append(traj)
-        traj_zoom, = ax_zoom.plot([], [], color=color[i], ls='-', lw=2, alpha=0.4)
-        traj_zoom_list.append(traj_zoom)
     txt = ax.text(0.05, 0.95, '', fontsize=14, ha='left', va='top', transform=ax.transAxes)
 
     line_ast, = ax.plot([], [], marker='.', markersize=5, color='grey', ls='none', label='Asteroids')
@@ -131,30 +124,17 @@ if make_animation == True:
     # make the plot look nice:
     ax.set_xlim(-32, 32)
     ax.set_ylim(-32, 32)
-    ax_zoom.set_xlim(-2, 2)
-    ax_zoom.set_ylim(-2, 2)
-    ax_zoom.set_xlabel('$x$ [AU]', fontsize=12)
-    ax_zoom.set_ylabel('$y$ [AU]', fontsize=12)
     ax.set_xticks([])
     ax.set_yticks([])
-    plt.gca().set_aspect('equal')
-    ax.legend(fontsize=12, frameon=False, loc='lower right')
-    ax.plot([-30, -20], [-29, -29], lw=0.9, c='w')
-    ax.plot([-2, 2, 2, -2, -2], [-2, -2, 2, 2, -2], lw=0.9, c='w')
-    ax.text(-25, -29, '10 AU', fontsize=14, ha='center', va='bottom')
-    fig.tight_layout()
+    ax.set_aspect('equal')
 
     # Function for animation:
     def animate(frame):
         for i in range(0, len(line_list)):
-            line_list[i].set_data(phase_solarsystem[:,i,0,0][frame], phase_solarsystem[:,i,0,1][frame])
-            zoom_list[i].set_data(phase_solarsystem[:,i,0,0][frame], phase_solarsystem[:,i,0,1][frame])
-            traj_list[i].set_data(phase_solarsystem[:,i,0,0][:frame], phase_solarsystem[:,i,0,1][:frame])
-            traj_zoom_list[i].set_data(phase_solarsystem[:,i,0,0][:frame], phase_solarsystem[:,i,0,1][:frame])
+            line_list[i].set_data(phase_solarsystem[:,i,0,0][frame], phase_solarsystem[:,i,0,2][frame])
+            traj_list[i].set_data(phase_solarsystem[:,i,0,0][:frame], phase_solarsystem[:,i,0,2][:frame])
         
-        line_ast.set_data(phase_solarsystem[:,len(line_list):,0,0][frame], phase_solarsystem[:,len(line_list):,0,1][frame])
-
-        txt.set_text('{:0.2f} yr'.format(time_solarsystem[frame]))
+        line_ast.set_data(phase_solarsystem[:,len(line_list):,0,0][frame], phase_solarsystem[:,len(line_list):,0,2][frame])
         
         return line, txt
 

@@ -189,7 +189,7 @@ if make_animation == True and rank == 0:
     which_frames = np.arange(0, len(time_solarsystem), 100)
     fps = 30
     ani = animation.FuncAnimation(fig, animate, frames=which_frames, interval=fps, blit=True)
-    ani.save("solarsystem.mp4")
+    ani.save('solarsystem.mp4')
 
 
 #--------------------------------------------
